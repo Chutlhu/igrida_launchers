@@ -11,16 +11,25 @@ MATLAB_FUN = "generate_rir_dataset"  # script that launch matlab binary
 UNAME = "ddicarlo"          # To check your jobs with oarstat
 LAPTOP = "embuscade"
 
-# HYPERPARAMETERS DEFINITIONS
+###############################################################################
+## HYPERPARAMETERS DEFINITIONS OF THE MATLAB FUNCTION
+###############################################################################
+
+# debug version: if true do not submit any job
+debug = True;
+# name for the job id
 shortname = 'vast'
+# parameters of the matlab function
 final_dataset_size = 10e3
 n_jobs = 200
-dataset_size_per_job = int(final_dataset_size/n_jobs_per_task);
+dataset_size_per_job = int(final_dataset_size/n_jobs);
 
 parameters_and_ranges = {
-    "dataset_size" :  dataset_size_per_job
+    "n_rirs" :  dataset_size_per_job
 }
 
+# If you have something to prune out in the parameter space
+# you should write some condition here
 def condition_to_prune_the_param_space(param_dict):
     return True
     # if param_dict["do_realistic_room"] > 0      \
@@ -29,23 +38,30 @@ def condition_to_prune_the_param_space(param_dict):
     #     return True
     # return False
 
-
 # PARAMETER SPACE
-# Set of input parameters for each job
-PRMS_NAMES = ["id", "dataset_size"]
+#Set of SORTED input parameters for each job !!! ATTENTION: here order matters
+PRMS_NAMES = ["n_rirs"]
 
 ### YOU SHOULD NOT MODIFY BELOW HERE ###
-BIN = "./bin/" + MATLAB_FUN + ".sh"  # Binary
+# path to the binary file:
+BIN = "./bin/" + MATLAB_FUN + ".sh"
+# path to the the file in the yuor local session
 PATH_SEND_RESULTS = UNAME + "@" + LAPTOP + ":" + SEND_RESULTS_PATH+SEND_RESULTS_DIR
 
-################################################################################
+###############################################################################
+## IMPORTS
+###############################################################################
 
 import os
 import subprocess
 from itertools import product
 import signal
+# !!! ATTENTION on igrida you it is better not to have a virtualenv,
+# so do avoid to use non standard imports
 
+###############################################################################
 ## SOME AUXILIARY FUNCTIONS
+###############################################################################
 
 # usefull class that allows take actions after a timeout
 class timeout:
@@ -69,7 +85,10 @@ def ask_binary_question(q):
     answer = raw_input(q+" [y/N] ").lower()
     return (answer == 'yes' or answer == 'y')
 
-# Generate the parameter space
+# Generate the parameter space:
+# for a dictionary of list, compute all the possible combinations
+# modify the function condition_to_prune_the_param_space to avoid 
+# some particoular combination
 def gen_params_space(**args):
     tupargs = list(args.items())
     keys = list(map(lambda x:x[0],tupargs))
@@ -146,6 +165,7 @@ def get_jobs():
 def check_job(pcmd, running):
     return pcmd in running
 
+# Compute number of core and walltime duration accoding to some params
 def compute_resources(params_string):
     p = scan_params_from_string(params_string)
     mem_gb = (p['d']*p['n']*8*1.5)      # 1.5*dataset size
@@ -169,31 +189,42 @@ def print_infos(nb_total, p_missing, p_incomplete, p_planned, pl_missing):
     print "From these missing or incomplete, "+str(p_planned)+"% are already running or planned."
     print "Missing lines: "+str(pl_missing)+"%."
 
-def ask_binary_question():
-    check = str(raw_input("Wanna do it ? (Y/N): ")).lower().strip()
-    try:
-        if check[0] == 'y':
-            return True
-        elif check[0] == 'n':
-            return False
-        else:
-            print('Invalid Input')
-            return ask_binary_question()
-    except Exception as error:
-        print("Please enter valid inputs")
-        print(error)
-        return ask_binary_question()
+def print_dict(d):
+    for k in d.keys():
+        print(k, d[k])
 
+# compose the string of argument for the binary file from the dictionary 
+# according to the values in the list PRMS_NAMES 
+def params2string(d):
+    s = "";
+    for p in PRMS_NAMES:
+        s = s + str(d[p]) + " "
+    return s
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+###############################################################################
 ### HERE COMES THE MAGIC
+###############################################################################
+
 def main():
 
-    print("==================================================")
-    print("=                    w|-|eLLc0me                 =")
-    print("=               please help yourself             =")
-    print("==================================================")
-
-
-    print("The magic trick of today is: running for " + MATLAB_FUN)
+    print(bcolors.OKGREEN
+        + "\n==================================================\n"  \
+        +  "=                    w|-|eLLc0me                 =\n"   \
+        +  "=               please help yourself             =\n"   \
+        +  "==================================================\n\n" \
+        + bcolors.ENDC)
+    print("The magic trick of today is: \n\trunning " \
+          + bcolors.OKGREEN + MATLAB_FUN + bcolors.ENDC + "\n")
 
     # Create directories if necessary
     execute("mkdir -p "+ RESULTS_DIR)
@@ -201,42 +232,61 @@ def main():
 
     if False:
         #TODO: check current and completed jobs
+        print "not implemented yet"
     else:
-        print("So, you want to lounch some experiments, arent you?")
+        print("So, you want to run some experiments, arent you?")
 
-        # generate list of all comb of parameters form the given dict
-        param_dicts_list = list(gen_params_space(**parameters_and_ranges))
+        if len(parameters_and_ranges.keys()) > 1:
+            # generate list of all comb of parameters form the given dict
+            param_dicts_list = list(gen_params_space(**parameters_and_ranges))
+        else:
+            # otherwise create a singleton list
+            param_dicts_list = [parameters_and_ranges]
 
-        n_jobs = len(param_dicts_list)
         # print how many jobs it is going to be launched
-        print("You are going to submit %g jobs to IGRIDA"%(n_jobs))
-
-        if not ask_binary_question():
-            return print('Ahhh, it was nice. See ya later!')
-
+        n_jobs = len(param_dicts_list)
+        print("You are going to submit %s %g jobs %s to IGRIDA\n"\
+            %(bcolors.OKGREEN, n_jobs, bcolors.ENDC))
+        
+        # ask for confirmation
+        if not ask_binary_question("Wanna do it?"):
+            print('Ahhh, it was nice. See ya later!')
+            return
+        
+        # if so, submit jobs for all parameters conbination
         for idx, params_dict in enumerate(param_dicts_list):
-            if idx > n_jobs -1:
-                print("Resubmitting failed jobs.")
 
-            print("Submitting job %d/%d"%(i+1,n_jobs))
+            if idx > n_jobs -1:
+                print("Submitting job %s%d/%d%s:"\
+                    %(bcolors.OKGREEN,idx+1,n_jobs,bcolors.ENDC))
+            else:
+                print("Submitting job %s%d/%d%s:"\
+                    %(bcolors.OKGREEN,idx+1,n_jobs,bcolors.ENDC))
+
             #from param dict to string for the matlab binary
-            suffix = params2string(params_dict)
+            params_str = params2string(params_dict)
             #compute resources (n_core, time) for the job
-            (n_cores, max_duration_hours) = (2,6)
-            #n_cores, max_duration_hours = compute_resources(params_dict)
-            wcmd = gen_wrapper_command(BIN, 
-                        shortname,
-                        suffix, n_cores, max_duration_hours)
+            (n_cores, max_duration_hours) = (2,2)
+             #n_cores, max_duration_hours = compute_resources(params_dict)
+            wcmd = gen_wrapper_command(
+                            BIN,            # path to the binar
+                            shortname,      # shortname for JOBID
+                            params_str,     # string of parameters
+                            n_cores, max_duration_hours) # resources
             try:
                 # let s wait 4 seconds before getting crazy...
                 with timeout(seconds=4):
-                    print(wcmd)
-                    execute(wcmd)
+                    print("\t" + bcolors.BOLD + wcmd + bcolors.ENDC)
+                    if not debug:
+                        execute(wcmd)
             except:
-                print('No worries, we will try it later')
+                print(bcolors.WARNING \
+                    + 'FAILED!!\n\tNo worries, we will try it later' \
+                    + bcolors.ENDC)
                 param_dicts_list.append(i)
 
             print ""
+    print " SO LONG AND THANKS FOR THE FISH."
 
 if __name__ == '__main__':
     main()
