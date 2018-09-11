@@ -17,16 +17,26 @@ LAPTOP = "embuscade"
 
 # debug version: if true do not submit any job
 debug = True;
-# name for the job id
-shortname = 'vast'
+# name for the job id: three capital letters
+shortname = 'VST' 
 # parameters of the matlab function
 final_dataset_size = 10e3
-n_jobs = 200
-dataset_size_per_job = int(final_dataset_size/n_jobs);
+n_task = 0            # [init] a parameter configuration
+n_jobs_per_task = 200 # number a of job for the same configuration
+dataset_size_per_job = int(final_dataset_size/n_jobs_per_task);
 
 parameters_and_ranges = {
-    "n_rirs" :  dataset_size_per_job
+    "n_rirs" :  dataset_size_per_job,
 }
+
+# Parameter space
+# Set of SORTED input parameters for each job !!! ATTENTION: here order matters
+PRMS_NAMES = ["n_rirs"]
+
+
+###############################################################################
+## FUNCTION DEPENDING ON THE PARAMS CONFIGURATION
+###############################################################################
 
 # If you have something to prune out in the parameter space
 # you should write some condition here
@@ -38,9 +48,24 @@ def condition_to_prune_the_param_space(param_dict):
     #     return True
     # return False
 
-# PARAMETER SPACE
-#Set of SORTED input parameters for each job !!! ATTENTION: here order matters
-PRMS_NAMES = ["n_rirs"]
+# Compute number of core and walltime duration accoding to some params
+def compute_resources(d):
+    # p = scan_params_from_string(params_string)
+    gb_per_100rirs = 0.015 # 15 MB for 100 rirs
+    hr_per_100rirs = 1     # 1 hour for for 100 rirs
+    mem_gb = (d['n_rirs']/100*gb_per_100rirs*1.5)
+    tim_hr = (d['n_rirs']/100*hr_per_100rirs*1.5)
+    # This is a rough approximation, the memory/core depends on the cluster!
+    if mem_gb > 6:
+        nb_cores = 12
+    elif mem_gb > 4:
+        nb_cores = 8
+    elif mem_gb > 2:
+        nb_cores = 2
+    else:
+        nb_cores = 1
+    max_duration_hours = int(round(tim_hr)) + 1
+    return (nb_cores, max_duration_hours)
 
 ### YOU SHOULD NOT MODIFY BELOW HERE ###
 # path to the binary file:
@@ -165,20 +190,6 @@ def get_jobs():
 def check_job(pcmd, running):
     return pcmd in running
 
-# Compute number of core and walltime duration accoding to some params
-def compute_resources(params_string):
-    p = scan_params_from_string(params_string)
-    mem_gb = (p['d']*p['n']*8*1.5)      # 1.5*dataset size
-    # This is a rough approximation, the memory/core depends on the cluster!
-    if mem_gb > 2:
-        nb_cores = 2
-    elif mem_gb > 4:
-        nb_cores = 8
-    else:
-        nb_cores = 12
-    max_duration_hours = 4
-    return (nb_cores, max_duration_hours)
-
 def res_oarsub(res):
     return ("Generate a job key" in res)
 
@@ -244,48 +255,55 @@ def main():
             param_dicts_list = [parameters_and_ranges]
 
         # print how many jobs it is going to be launched
-        n_jobs = len(param_dicts_list)
-        print("You are going to submit %s %g jobs %s to IGRIDA\n"\
-            %(bcolors.OKGREEN, n_jobs, bcolors.ENDC))
+        n_task = len(param_dicts_list)
+        n_jobs = n_jobs_per_task * n_task
+        print(("You are going to submit %s %g jobs %s to IGRIDA:\n"\
+               + "\t%g jobs x %g tasks\n")
+            %(bcolors.OKGREEN, n_jobs, bcolors.ENDC, n_jobs_per_task, n_task))
         
         # ask for confirmation
         if not ask_binary_question("Wanna do it?"):
             print('Ahhh, it was nice. See ya later!')
             return
         
+        # job counter
+        jobcount = 1;
         # if so, submit jobs for all parameters conbination
         for idx, params_dict in enumerate(param_dicts_list):
 
-            if idx > n_jobs -1:
-                print("Submitting job %s%d/%d%s:"\
-                    %(bcolors.OKGREEN,idx+1,n_jobs,bcolors.ENDC))
-            else:
-                print("Submitting job %s%d/%d%s:"\
-                    %(bcolors.OKGREEN,idx+1,n_jobs,bcolors.ENDC))
+            # n_job for each parameter configuration
+            for j in range(n_jobs):
 
-            #from param dict to string for the matlab binary
-            params_str = params2string(params_dict)
-            #compute resources (n_core, time) for the job
-            (n_cores, max_duration_hours) = (2,2)
-             #n_cores, max_duration_hours = compute_resources(params_dict)
-            wcmd = gen_wrapper_command(
-                            BIN,            # path to the binar
-                            shortname,      # shortname for JOBID
-                            params_str,     # string of parameters
-                            n_cores, max_duration_hours) # resources
-            try:
-                # let s wait 4 seconds before getting crazy...
-                with timeout(seconds=4):
-                    print("\t" + bcolors.BOLD + wcmd + bcolors.ENDC)
-                    if not debug:
-                        execute(wcmd)
-            except:
-                print(bcolors.WARNING \
-                    + 'FAILED!!\n\tNo worries, we will try it later' \
-                    + bcolors.ENDC)
-                param_dicts_list.append(i)
+                if j > n_jobs -1:
+                    print("Submitting job %s%d/%d%s:"\
+                        %(bcolors.OKGREEN,j+1,n_jobs,bcolors.ENDC))
+                else:
+                    print("Submitting job %s%d/%d%s:"\
+                        %(bcolors.OKGREEN,j+1,n_jobs,bcolors.ENDC))
 
-            print ""
+                #from param dict to string for the matlab binary
+                params_str = params2string(params_dict)
+                #compute resources (n_core, time) for the job
+                n_cores, max_duration_hours = compute_resources(params_dict)
+                wcmd = gen_wrapper_command(
+                                BIN,                         # path to the binar
+                                shortname + str(jobcount),   # shortname for JOBID
+                                params_str,                  # string of parameters
+                                n_cores, max_duration_hours) # resources
+                try:
+                    # let s wait 4 seconds before getting crazy...
+                    with timeout(seconds=4):
+                        print("\t" + bcolors.BOLD + wcmd + bcolors.ENDC)
+                        if not debug:
+                            execute(wcmd)
+                except:
+                    print(bcolors.WARNING \
+                        + 'FAILED!!\n\tNo worries, we will try it later' \
+                        + bcolors.ENDC)
+                    param_dicts_list.append(i)
+
+                jobcount += 1
+                print ""
     print " SO LONG AND THANKS FOR THE FISH."
 
 if __name__ == '__main__':
