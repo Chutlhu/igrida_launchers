@@ -16,7 +16,7 @@ LAPTOP = "embuscade"
 ###############################################################################
 
 # debug version: if true do not submit any job
-debug = True;
+DEBUG = False;
 # name for the job id: three capital letters
 shortname = 'VST' 
 # parameters of the matlab function
@@ -175,14 +175,15 @@ def gen_wrapper_command(cmd, shortname, suffix, nb_cores, max_duration_hours):
             + "/nodes=1"                      \
             + "/core="    + str(nb_cores) + "," \
             + "walltime=" + str(max_duration_hours) + ":00:00 "  \
-            + "-S \"./"   + cmd  + " " + suffix + "\" " \
+            + "-S \""     + cmd  + " " + suffix + "\" " \
             + "-n " + shortname  + " "       \
             + "-O " + outn + " "             \
             + "-E " + errn
     return cmd
 
 def get_jobs():
-    running = execute("oarstat -u "+UNAME+" -f | grep command | cut -d' ' -f7-")
+    cmd = "oarstat -u "+UNAME+" -f | grep command | cut -d' ' -f7-"
+    running = execute(cmd)
     # running is the list of commands, 1 command per line
     return running
 
@@ -192,6 +193,52 @@ def check_job(pcmd, running):
 
 def res_oarsub(res):
     return ("Generate a job key" in res)
+
+# Returns the number of result lines in [fn], or 0 if the file does not exist.
+def get_lines(fn):
+    if os.path.isfile(fn):
+        cmd = "wc -l %s | cut -f 1 -d ' '" % fn
+        nb_lines = int(ex(cmd))
+        if nb_lines>0:
+            nb_lines = nb_lines-1   # Do not count the header line
+    else:
+        nb_lines = 0
+    return nb_lines
+
+# Makes a first loop on the parameter space to compute the number of jobs,
+# and check if some results have already been computed.
+# def collect_data(submitted_commands):
+#     nb_total      = 0
+#     nb_missing    = 0
+#     nb_incomplete = 0
+#     nb_planned    = 0 # A planned job can be "missing" or "incomplete" as well!
+#     nbl_total     = 0
+#     nbl_computed  = 0
+
+#     param_dicts_list = gen_list_of_params_dict(parameters_and_ranges)
+
+#     for param_dict in param_dicts_list:
+#         # print sn
+#         nb_total = nb_total + 1
+#         nbl_total = nbl_total + its
+#         nb_lines = get_lines(fn)
+#         nbl_computed = nbl_computed + nb_lines
+#         if nb_lines == 0:
+#             nb_missing = nb_missing + 1
+#         if nb_lines > 0 and nb_lines < its:
+#             # print "nb_lines = "+str(nb_lines)+"/"+str(its)
+#             nb_incomplete = nb_incomplete + 1
+#         params_str = params2string(params_dict)
+#         planned = check_job(params_str, submitted_commands)
+#         if planned:
+#             nb_planned = nb_planned + 1
+#     p_missing    = int(nb_missing / float(nb_total) * 100)
+#     p_incomplete = int(nb_incomplete / float(nb_total) * 100)
+#     pl_missing   = int((nbl_total - nbl_computed) / float(nbl_total) * 100)
+#     p_planned    = int(nb_planned / float(nb_missing + nb_incomplete) * 100)
+#     nb_relaunch  = nb_incomplete + nb_missing - nb_planned       # Relaunch if missing
+#     return (nb_total, nb_missing, nb_incomplete, nb_relaunch, p_missing, p_incomplete, pl_missing, p_planned)
+
 
 def print_infos(nb_total, p_missing, p_incomplete, p_planned, pl_missing):
     print "Total number of jobs: "+str(nb_total)+"."
@@ -222,12 +269,43 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+def gen_list_of_params_dict(parameters_and_ranges):
+    if len(parameters_and_ranges.keys()) == 1:
+        return [parameters_and_ranges] # create a singleton list
+    if len(parameters_and_ranges.keys()) == 0:
+        print("No parameters space provide... woooow see ya!")
+        return exit(0)
+    
+    # generate list of all comb of parameters form the given dict
+    return list(gen_params_space(**parameters_and_ranges))
+
+def oar_submit(wcmd):
+    try:
+        # let s wait 4 seconds before getting crazy...
+        with timeout(seconds=4):
+            print("\t" + bcolors.BOLD + wcmd + bcolors.ENDC)
+            if not DEBUG:
+                execute(wcmd)
+            print("  submitted!")
+            return 0
+    except:
+        print(bcolors.WARNING \
+            + "MEEGA FAIL!!\n" + bcolors.ENDC \
+            + "\tNo worries, we will try it in a while..."\
+            )
+        return oar_submit(wcmd)
+
 ###############################################################################
 ### HERE COMES THE MAGIC
 ###############################################################################
 
 def main():
 
+    # submitted_commands = get_jobs()
+    # (nb_total, nb_missing, nb_incomplete, nb_relaunch, \
+    #     p_missing, p_incomplete, pl_missing, p_planned) \
+    #         = collect_data(submitted_commands)
+    # 1/0
     print(bcolors.OKGREEN
         + "\n==================================================\n"  \
         +  "=                    w|-|eLLc0me                 =\n"   \
@@ -242,18 +320,40 @@ def main():
     execute("mkdir -p "+ LOG_DIR)
 
     if False:
-        #TODO: check current and completed jobs
-        print "not implemented yet"
+        print("Not yet implemented.")
+    # if nb_relaunch>0:
+    #     currently_running = 0
+        # if nb_relaunch == nb_total:
+        #     print "Well well well, looks like there are no results yet."
+        #     b = ask_binary_question("You're about to launch "+str(nb_total)+" scripts. Proceed?")
+        #     if not b:
+        #         exit(0)
+        # else:
+        #     print_infos(nb_total, p_missing, p_incomplete, p_planned, pl_missing)
+        #     print "------------------------------"
+        #     b = ask_binary_question("You're about to relaunch "+str(nb_relaunch)+" scripts. Proceed?")
+        #     if not b:
+        #         exit(0)
+        # # This is where we actually submit the jobs
+        # for (p, sn, fn, cmd, pcmd, its) in gen_params():
+        #     nbl = get_lines(fn)
+        #     nbl_to_compute = its - nbl
+        #     planned = check_job(pcmd, submitted_commands)
+        #     if nbl_to_compute>0 and not planned: # then we actually need to do something…
+        #         (nb_cores, max_duration_hours) = compute_ressources(p)
+        #         wcmd = gen_wrapper_command(cmd, sn, nb_cores, max_duration_hours)
+        #         # print "'"+wcmd+"' must run."
+        #         res = ex(wcmd)
+        #         if not res_oarsub(res):
+        #             print res
+        #         else:
+        #             print "[OK] "+sn
+        # if nb_relaunch<nb_total:
+        #     ask_send_results("Should I send intermediate results to your laptop")
     else:
-        print("So, you want to run some experiments, arent you?")
+        print("So, you want to run some experiments, aren't you?")
 
-        if len(parameters_and_ranges.keys()) > 1:
-            # generate list of all comb of parameters form the given dict
-            param_dicts_list = list(gen_params_space(**parameters_and_ranges))
-        else:
-            # otherwise create a singleton list
-            param_dicts_list = [parameters_and_ranges]
-
+        param_dicts_list = gen_list_of_params_dict(parameters_and_ranges)
         # print how many jobs it is going to be launched
         n_task = len(param_dicts_list)
         n_jobs = n_jobs_per_task * n_task
@@ -265,20 +365,24 @@ def main():
         if not ask_binary_question("Wanna do it?"):
             print('Ahhh, it was nice. See ya later!')
             return
-        
+        print("\n")
+
         # job counter
         jobcount = 1;
         # if so, submit jobs for all parameters conbination
-        for idx, params_dict in enumerate(param_dicts_list):
+        for i, params_dict in enumerate(param_dicts_list):
+
+            print("Considering tasks %s%d/%d%s:\n"\
+                %(bcolors.OKGREEN,i+1,n_task,bcolors.ENDC))
 
             # n_job for each parameter configuration
             for j in range(n_jobs):
 
                 if j > n_jobs -1:
-                    print("Submitting job %s%d/%d%s:"\
+                    print("  Submitting job %s%d/%d%s:"\
                         %(bcolors.OKGREEN,j+1,n_jobs,bcolors.ENDC))
                 else:
-                    print("Submitting job %s%d/%d%s:"\
+                    print("  Submitting job %s%d/%d%s:"\
                         %(bcolors.OKGREEN,j+1,n_jobs,bcolors.ENDC))
 
                 #from param dict to string for the matlab binary
@@ -290,21 +394,14 @@ def main():
                                 shortname + str(jobcount),   # shortname for JOBID
                                 params_str,                  # string of parameters
                                 n_cores, max_duration_hours) # resources
-                try:
-                    # let s wait 4 seconds before getting crazy...
-                    with timeout(seconds=4):
-                        print("\t" + bcolors.BOLD + wcmd + bcolors.ENDC)
-                        if not debug:
-                            execute(wcmd)
-                except:
-                    print(bcolors.WARNING \
-                        + 'FAILED!!\n\tNo worries, we will try it later' \
-                        + bcolors.ENDC)
-                    param_dicts_list.append(i)
+                oar_submit(wcmd)
 
                 jobcount += 1
-                print ""
-    print " SO LONG AND THANKS FOR THE FISH."
+
+                print("\n")
+            print("\n")
+
+    print(" SO LONG AND THANKS FOR THE FISH.")
 
 if __name__ == '__main__':
     main()
