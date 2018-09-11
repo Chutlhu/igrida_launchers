@@ -25,13 +25,16 @@ n_task = 0            # [init] a parameter configuration
 n_jobs_per_task = 200 # number a of job for the same configuration
 dataset_size_per_job = int(final_dataset_size/n_jobs_per_task);
 
+# Dictionary that define the ranges of the parameters
+# !!! ATTENTION each value must a LIST!
 parameters_and_ranges = {
-    "n_rirs" :  dataset_size_per_job,
+    "n_rirs" :  [dataset_size_per_job],
+    "filenames" : ['param1','param2'],
 }
 
 # Parameter space
 # Set of SORTED input parameters for each job !!! ATTENTION: here order matters
-PRMS_NAMES = ["n_rirs"]
+PRMS_NAMES = ["n_rirs", "filenames"]
 
 
 ###############################################################################
@@ -114,26 +117,26 @@ def ask_binary_question(q):
 # for a dictionary of list, compute all the possible combinations
 # modify the function condition_to_prune_the_param_space to avoid 
 # some particoular combination
-def gen_params_space(**args):
+def gen_all_combinations(**args):
     tupargs = list(args.items())
     keys = list(map(lambda x:x[0],tupargs))
-    for item in product(*map(lambda x:x[1],tupargs)):
+    for item in product(*(args[prm] for prm in PRMS_NAMES)):
         tmp = dict(zip(keys,item))
-        if not condition_to_prune_the_param_space(tmp):
-            yield dict(zip(keys,item))
+        if condition_to_prune_the_param_space(tmp):
+            yield tmp
 
-# Generate a short version of the filename with only the values
-def short_name(oldstr):
-    for char in PRMS_NAMES:
-        oldstr.replace(char, "")
-    return oldstr.replace("-", "")
+# # Generate a short version of the filename with only the values
+# def short_name(oldstr):
+#     for char in PRMS_NAMES:
+#         oldstr.replace(char, "")
+#     return oldstr.replace("-", "")
 
-def parse_short_name(short_name):
-    params_str = short_name.split('_')
-    params_dict = {}
-    for idx, value in enumerate(params_str):
-        params_dict[PRMS_NAMES[idx]] = value
-    return params_dict
+# def parse_short_name(short_name):
+#     params_str = short_name.split('_')
+#     params_dict = {}
+#     for idx, value in enumerate(params_str):
+#         params_dict[PRMS_NAMES[idx]] = value
+#     return params_dict
 
 def parse_full_name(full_name):
     return
@@ -255,6 +258,7 @@ def print_dict(d):
 # according to the values in the list PRMS_NAMES 
 def params2string(d):
     s = "";
+    print(d)
     for p in PRMS_NAMES:
         s = s + str(d[p]) + " "
     return s
@@ -269,15 +273,14 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def gen_list_of_params_dict(parameters_and_ranges):
-    if len(parameters_and_ranges.keys()) == 1:
-        return [parameters_and_ranges] # create a singleton list
-    if len(parameters_and_ranges.keys()) == 0:
+def gen_list_of_params_dict(param_space_dict):
+    if len(param_space_dict.keys()) == 1:
+        return [param_space_dict] # create a singleton list
+    if len(param_space_dict.keys()) == 0:
         print("No parameters space provide... woooow see ya!")
         return exit(0)
-    
     # generate list of all comb of parameters form the given dict
-    return list(gen_params_space(**parameters_and_ranges))
+    return list(gen_all_combinations(**param_space_dict))
 
 def oar_submit(wcmd):
     try:
@@ -354,6 +357,7 @@ def main():
         print("So, you want to run some experiments, aren't you?")
 
         param_dicts_list = gen_list_of_params_dict(parameters_and_ranges)
+
         # print how many jobs it is going to be launched
         n_task = len(param_dicts_list)
         n_jobs = n_jobs_per_task * n_task
