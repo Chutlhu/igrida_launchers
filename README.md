@@ -19,3 +19,19 @@ Moreover they features some function to:
 - synchronize local2igrida folders 
 - send emails with job status
 - print jobs status (well, if your forget your username (?) or you are too lazy to ype oarstat)
+
+## PYTHON and PYTORCH on IGRIDA
+### Set up the virtualenv
+create your project folder
+    $ mkdir -p 'my_project'
+    $ cd my_project/
+run a interactive job (otherwire python and virtualenv module are not available)
+    $ oarsub -I -l walltime=1:00:00 # 1hour interactive job
+load the python module of the desired version and the related virtualenv. For python3.6 do the following
+    $ module load python-3.6.5-gcc-4.9.2-zswqcs2 
+    $ module load py-virtualenv-16.0.0-gcc-4.9.2-ogdwl3o
+    $ module load cuda/9.0.176    # for pytorch with cuda
+create the virtualenv, activate and pip-install all you want
+    $ virtualenv venv -p python3.6
+    $ source venv/bin/activatie
+    $ pip install ...
