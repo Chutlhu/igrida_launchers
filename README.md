@@ -29,13 +29,27 @@ create your project folder
 run a interactive job (otherwire python and virtualenv module are not available)
 
     $ oarsub -I -l walltime=1:00:00 # 1hour interactive job
+    $ ##If you want to pip-install a huge module (such as pytorch) remeber to reserve enought space
+      ##i fact 
+    $ oarsub -I -l /nodes=1,walltime=1:00:00 -p 'mem_node > 3*1024'
 load the python module of the desired version and the related virtualenv. For python3.6 do the following
     
     $ module load python-3.6.5-gcc-4.9.2-zswqcs2 
     $ module load py-virtualenv-16.0.0-gcc-4.9.2-ogdwl3o
-    $ module load cuda/9.0.176    # for pytorch with cuda
 create the virtualenv, activate and pip-install all you want
     
     $ virtualenv venv -p python3.6
     $ source venv/bin/activatie
     $ pip install ...
+
+### Run PYTORCH with GPU-CUDA
+Run interactive job (with gpu) and activate the virtualenv
+
+    $ oarsub -I -l /nodes=1/gpu_device=2,walltime=1:00:00 -p 'mem_node > 3*1024' #!!! note the GPU device flag
+    $ source venv/bin/activatie
+Load module
+
+    $ module load cuda
+and goo
+
+    $ python main.py
